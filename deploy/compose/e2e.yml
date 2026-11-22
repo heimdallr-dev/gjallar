@@ -1,0 +1,12 @@
+# Just the infrastructure for `make e2e` (fake scanners, real NATS/Postgres/DuckDB).
+name: gjallar-e2e
+services:
+  nats:
+    image: nats:2.11.6-alpine
+    command: ["-js"]
+    ports: ["14222:4222"]
+  postgres:
+    image: postgres:17-alpine
+    environment: { POSTGRES_DB: gjallar, POSTGRES_USER: gjallar, POSTGRES_PASSWORD: gjallar }
+    ports: ["15432:5432"]
+    healthcheck: { test: ["CMD", "pg_isready", "-U", "gjallar"], interval: 2s, retries: 30 }

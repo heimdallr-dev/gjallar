@@ -1,0 +1,17 @@
+#!/bin/sh
+# Fake Syft for end-to-end tests: emits a fixed SBOM whatever the image.
+if [ "$1" = convert ]; then
+  case "$*" in
+    *cyclonedx-json*) echo '{"bomFormat":"CycloneDX","specVersion":"1.6","components":[{"name":"libwebp7","version":"1.2.4"}]}' ;;
+    *spdx-json*)      echo '{"spdxVersion":"SPDX-2.3","packages":[{"name":"libwebp7","versionInfo":"1.2.4"}]}' ;;
+  esac
+  exit 0
+fi
+cat <<'JSON'
+{"artifacts":[
+ {"name":"openssl","version":"3.0.11-1~deb12u2","type":"deb","licenses":[{"value":"Apache-2.0","spdxExpression":"Apache-2.0"}]},
+ {"name":"libwebp7","version":"1.2.4","type":"deb","licenses":[{"value":"BSD-3-Clause","spdxExpression":"BSD-3-Clause"}]},
+ {"name":"readline","version":"8.2","type":"deb","licenses":[{"value":"GPL-3.0-only","spdxExpression":"GPL-3.0-only"}]}],
+ "distro":{"id":"debian","versionID":"12"},
+ "source":{"metadata":{"repoDigests":["harbor.local/shop/web@sha256:e2e0000000000000000000000000000000000000000000000000000000000001"]}}}
+JSON

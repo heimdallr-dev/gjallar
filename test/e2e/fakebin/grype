@@ -1,0 +1,12 @@
+#!/bin/sh
+# Fake Grype: one KEV-listed High with a fix, one quiet Critical without.
+cat <<'JSON'
+{"matches":[
+ {"vulnerability":{"id":"CVE-2023-4863","severity":"High","cvss":[{"version":"3.1","metrics":{"baseScore":8.8}}],
+   "fix":{"versions":["1.2.4-0.2+deb12u1"],"state":"fixed"},"epss":[{"epss":0.94}],"knownExploited":[{"cve":"CVE-2023-4863"}]},
+  "artifact":{"name":"libwebp7","version":"1.2.4","type":"deb"}},
+ {"vulnerability":{"id":"CVE-2099-0001","severity":"Critical","cvss":[{"version":"3.1","metrics":{"baseScore":9.8}}],
+   "fix":{"state":"not-fixed"},"epss":[{"epss":0.0004}]},
+  "artifact":{"name":"openssl","version":"3.0.11-1~deb12u2","type":"deb"}}],
+ "descriptor":{"version":"fake","db":{"status":{"built":"2026-11-21T00:00:00Z"}}}}
+JSON

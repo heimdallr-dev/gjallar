@@ -1,0 +1,80 @@
+# Tag vX.Y.Z → multi-arch images on GHCR, each signed with Sigstore (keyless),
+# with an SBOM and SLSA build provenance attached; CLI binaries with checksums
+# and provenance. Gjallar ships what it asks others to ship.
+# Private repos: provenance goes to GitHub's private attestation store and the
+# BuildKit SBOM/provenance stay in the (private) registry; nothing is written
+# to the public Sigstore log until the repository is public.
+name: release
+on: { push: { tags: ["v*"] } }
+permissions: { contents: read }
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, packages: write, id-token: write, attestations: write }
+    strategy:
+      matrix:
+        component: [api, agent, mcp, web, analytics, cli, worker-sbom, worker-vuln, worker-license, worker-patch]
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/gjallar-${{ matrix.component }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: { persist-credentials: false }
+      - id: v  # image tags match the chart's appVersion: v0.1.0 -> 0.1.0
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      - id: build
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          target: ${{ matrix.component }}
+          platforms: linux/amd64,linux/arm64
+          build-args: VERSION=${{ steps.v.outputs.version }}
+          tags: ${{ env.IMAGE }}:${{ steps.v.outputs.version }}
+          push: true
+          sbom: true
+          provenance: mode=max
+      - if: ${{ !github.event.repository.private }}  # public Sigstore (Rekor) is a public log: only for public repos
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
+      - if: ${{ !github.event.repository.private }}  # public Sigstore (Rekor) is a public log: only for public repos
+        name: Sign (keyless, Sigstore)
+        run: cosign sign --yes "${IMAGE}@${DIGEST}"
+        env: { DIGEST: "${{ steps.build.outputs.digest }}" }
+      - if: ${{ !github.event.repository.private }}  # public Sigstore (Rekor) is a public log: only for public repos
+        uses: anchore/sbom-action@9246b90769f852b3a8921f330c59e0b3f439d6e9 # v0.20.1
+        with:
+          image: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+          upload-release-assets: false
+      - if: ${{ !github.event.repository.private }}  # public Sigstore (Rekor) is a public log: only for public repos
+        name: Attach the SBOM as a signed attestation
+        run: cosign attest --yes --type cyclonedx --predicate sbom.cdx.json "${IMAGE}@${DIGEST}"
+        env: { DIGEST: "${{ steps.build.outputs.digest }}" }
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with: { subject-name: "${{ env.IMAGE }}", subject-digest: "${{ steps.build.outputs.digest }}", push-to-registry: true }
+
+  cli:
+    runs-on: ubuntu-latest
+    permissions: { contents: write, id-token: write, attestations: write }
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: { persist-credentials: false }
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with: { go-version: "1.26.11" }
+      - name: Build
+        run: |
+          mkdir dist
+          for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            os=${t%/*}; arch=${t#*/}; ext=; [ "$os" = windows ] && ext=.exe
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -mod=vendor -trimpath \
+              -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" -o "dist/gjallar-${os}-${arch}${ext}" ./cmd/gjallar
+          done
+          cd dist && sha256sum * > SHA256SUMS
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with: { subject-path: "dist/*" }
+      - name: Publish release
+        run: gh release create "$GITHUB_REF_NAME" dist/* --generate-notes --verify-tag
+        env: { GH_TOKEN: "${{ github.token }}" }

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Fake Trivy report for the patch worker.
+echo '{"SchemaVersion":2,"Results":[]}'

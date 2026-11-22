@@ -1,0 +1,113 @@
+# Gjallar on one machine (WSL2 + Docker Desktop, or any Docker host).
+#   make dev                      # build images and start everything
+#   docker compose --profile auth up    # also start Keycloak
+# UI: http://localhost:8083   API: http://localhost:8080   MCP: http://localhost:8082/mcp
+# There is no Kubernetes here, so the agent is not started: queue images with
+#   gjallar submit nginx:1.27     (GJALLAR_URL=http://localhost:8080)
+name: gjallar
+
+x-common: &common
+  restart: unless-stopped
+  environment: &env
+    GJALLAR_NATS_URL: nats://nats:4222
+    GJALLAR_LOG_LEVEL: info
+
+services:
+  nats:
+    image: nats:2.11.6-alpine
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    ports: ["4222:4222", "8222:8222"]
+    volumes: [nats:/data]
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment: { POSTGRES_DB: gjallar, POSTGRES_USER: gjallar, POSTGRES_PASSWORD: gjallar }
+    ports: ["5432:5432"]
+    volumes: [pg:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD", "pg_isready", "-U", "gjallar"], interval: 5s, retries: 20 }
+    restart: unless-stopped
+
+  grype-db:
+    image: quay.io/kubescape/grype-offline-db:v6-latest
+    ports: ["8090:8080"]
+    restart: unless-stopped
+
+  api:
+    <<: *common
+    build: { context: ../.., target: api }
+    image: gjallar-api:dev
+    environment:
+      <<: *env
+      GJALLAR_DATABASE_URL: postgres://gjallar:gjallar@postgres:5432/gjallar?sslmode=disable
+      GJALLAR_ANALYTICS_URL: http://analytics:8081
+      GJALLAR_OIDC_ISSUER: ${GJALLAR_OIDC_ISSUER:-}
+      GJALLAR_ADMISSION_OPEN: "true"
+    ports: ["8080:8080"]
+    depends_on: { postgres: { condition: service_healthy }, nats: { condition: service_started } }
+
+  worker-sbom:
+    <<: *common
+    build: { context: ../.., target: worker-sbom }
+    image: gjallar-worker-sbom:dev
+    environment: { <<: *env, GJALLAR_SYFT_SOURCE: registry, HOME: /tmp }
+    depends_on: [nats]
+
+  worker-vuln:
+    <<: *common
+    build: { context: ../.., target: worker-vuln }
+    image: gjallar-worker-vuln:dev
+    environment: { <<: *env, GRYPE_DB_UPDATE_URL: "http://grype-db:8080/databases", HOME: /tmp }
+    depends_on: [nats, grype-db]
+
+  worker-license:
+    <<: *common
+    build: { context: ../.., target: worker-license }
+    image: gjallar-worker-license:dev
+    depends_on: [nats]
+
+  analytics:
+    <<: *common
+    build: { context: ../.., target: analytics }
+    image: gjallar-analytics:dev
+    environment: { <<: *env, GJALLAR_LAKE_MODE: parquet, GJALLAR_LAKE_DATA: /data/lake/ }
+    volumes: [lake:/data/lake]
+    ports: ["8081:8081"]
+    depends_on: [nats]
+
+  web:
+    <<: *common
+    build: { context: ../.., target: web }
+    image: gjallar-web:dev
+    environment:
+      GJALLAR_API_URL: http://api:8080
+      GJALLAR_OIDC_ISSUER: ${GJALLAR_OIDC_ISSUER:-}
+    ports: ["8083:8083"]
+    depends_on: [api]
+
+  mcp:
+    <<: *common
+    build: { context: ../.., target: mcp }
+    image: gjallar-mcp:dev
+    environment:
+      GJALLAR_API_URL: http://api:8080
+      GJALLAR_OIDC_ISSUER: ${GJALLAR_OIDC_ISSUER:-}
+    ports: ["8082:8082"]
+    depends_on: [api]
+
+  # --- optional: Keycloak (docker compose --profile auth up) -------------
+  # Browser and API must see the same issuer URL. Add "127.0.0.1 keycloak"
+  # to your hosts file (Windows: C:\Windows\System32\drivers\etc\hosts), then
+  #   GJALLAR_OIDC_ISSUER=http://keycloak:8180/realms/gjallar docker compose --profile auth up
+  keycloak:
+    profiles: [auth]
+    image: quay.io/keycloak/keycloak:26.4
+    command: ["start-dev", "--import-realm", "--http-port=8180"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HOSTNAME: http://keycloak:8180
+    ports: ["8180:8180"]
+    volumes: ["../keycloak/gjallar-realm.json:/opt/keycloak/data/import/gjallar-realm.json:ro"]
+
+volumes: { nats: {}, pg: {}, lake: {} }

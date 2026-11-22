@@ -1,0 +1,4 @@
+/bin/
+*.parquet
+*.ndjson
+.env

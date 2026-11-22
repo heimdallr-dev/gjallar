@@ -1,0 +1,4 @@
+#!/bin/sh
+# Fake Copa: succeeds without touching any registry.
+echo "patched (fake)" >&2
+exit 0

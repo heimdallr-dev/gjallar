@@ -54,7 +54,6 @@ func TestEndToEnd(t *testing.T) {
 		defer srv.Close()
 	}
 	api := client.New(env("GJALLAR_URL", "http://127.0.0.1:18080"), "")
-	web := client.New(env("GJALLAR_WEB_URL", "http://127.0.0.1:18083"), "")
 	mcpURL := env("GJALLAR_MCP_URL", "http://127.0.0.1:18082")
 
 	// 1. Agent's job, simulated: publish one exposed workload.
@@ -93,10 +92,10 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatalf("posture: %v %d", err, len(posture))
 	}
 
-	// 3. Through the web pod's reverse proxy.
+	// 3. The summary (the web UI's landing data; its proxy is tested in gjallar-web).
 	var sum app.Summary
-	if err := web.Get(ctx, "/api/v1/summary", &sum); err != nil || sum.OpenFindings != 2 || sum.KEV != 1 {
-		t.Fatalf("summary via web: %+v %v", sum, err)
+	if err := api.Get(ctx, "/api/v1/summary", &sum); err != nil || sum.OpenFindings != 2 || sum.KEV != 1 {
+		t.Fatalf("summary: %+v %v", sum, err)
 	}
 
 	// 4. MCP: tools/call top_risks.

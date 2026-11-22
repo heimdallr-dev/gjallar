@@ -1,6 +1,5 @@
 bin
 .git
-docs
 deploy
 test
 scripts

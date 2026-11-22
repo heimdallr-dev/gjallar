@@ -77,8 +77,7 @@ services:
 
   web:
     <<: *common
-    build: { context: ../.., target: web }
-    image: gjallar-web:dev
+    image: ghcr.io/heimdallr-dev/gjallar-web:${GJALLAR_WEB_VERSION:-0.3.1}  # built in the gjallar-web repo
     environment:
       GJALLAR_API_URL: http://api:8080
       GJALLAR_OIDC_ISSUER: ${GJALLAR_OIDC_ISSUER:-}

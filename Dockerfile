@@ -1,8 +1,9 @@
 # syntax=docker/dockerfile:1.7
 # One Dockerfile, one target per component:
 #   docker build --target api -t gjallar-api .
-# Targets: api, agent, mcp, web, analytics, worker-sbom, worker-vuln,
+# Targets: api, agent, mcp, analytics, worker-sbom, worker-vuln,
 #          worker-license, worker-patch, cli
+# The web UI is built in github.com/heimdallr-dev/gjallar-web.
 # Everything Go is static (CGO off). Core services run on distroless as
 # non-root; each worker image carries only the engine it needs.
 
@@ -74,11 +75,6 @@ FROM distroless AS mcp
 COPY --from=build /out/gjallar-mcp /gjallar-mcp
 EXPOSE 8082
 ENTRYPOINT ["/gjallar-mcp"]
-
-FROM distroless AS web
-COPY --from=build /out/gjallar-web /gjallar-web
-EXPOSE 8083
-ENTRYPOINT ["/gjallar-web"]
 
 FROM distroless AS cli
 COPY --from=build /out/gjallar /gjallar

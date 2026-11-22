@@ -6,16 +6,17 @@
 #   make deploy REGISTRY=harbor.local/gjallar HELM_ARGS="-f my-values.yaml"
 #   make images BUILDER=nerdctl  containerd + BuildKit instead of Docker (WSL without Docker Desktop)
 SHELL      := /bin/bash
-VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 0.3.0)
+VERSION    ?= $(patsubst v%,%,$(shell git describe --tags --always --dirty 2>/dev/null || echo 0.3.1))
 REGISTRY   ?= ghcr.io/heimdallr-dev
 NAMESPACE  ?= gjallar
 PLATFORMS  ?= linux/amd64
 HELM_ARGS  ?=
 # Chart, policies and realm live in github.com/heimdallr-dev/gjallar-helm (clone next to this repo).
 HELM_REPO  ?= ../gjallar-helm
-CHART      ?= $(HELM_REPO)/charts/gjallar
+# Without a gjallar-helm checkout, use the published chart.
+CHART      ?= $(if $(wildcard $(HELM_REPO)/charts/gjallar),$(HELM_REPO)/charts/gjallar,oci://ghcr.io/heimdallr-dev/charts/gjallar)
 GOFLAGS    := -mod=vendor
-COMPONENTS := api agent mcp web analytics cli worker-sbom worker-vuln worker-license worker-patch
+COMPONENTS := api agent mcp analytics cli worker-sbom worker-vuln worker-license worker-patch
 export GOFLAGS
 
 # Container tool: docker (default) or nerdctl (containerd; needs buildkitd running).

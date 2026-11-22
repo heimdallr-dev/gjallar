@@ -41,7 +41,7 @@ in CISA KEV, has a fix, and sits behind an Ingress.
 | `gjallar-worker-patch` | Copa + rootless BuildKit: patch OS packages, push `:tag-patched` |
 | `gjallar-agent` | One per cluster: running workloads, digests, exposure, security context; optional runtime mode records which packages load (Inspektor Gadget) |
 | `gjallar-analytics` | Event stream → Parquet/DuckLake; read-only SQL, reports, Parquet export |
-| `gjallar-web` | Single-page UI (no build step), OIDC PKCE login |
+| `gjallar-web` | Single-page UI (no build step), OIDC PKCE login; built in [gjallar-web](https://github.com/heimdallr-dev/gjallar-web) |
 | `gjallar-mcp` | Model Context Protocol server: 9 tools, forwards the caller's token |
 | `nats`, `postgres`, `grype-db` | JetStream bus/KV/object store, operational DB, Grype DB mirror |
 | CronJobs | DB refresh + rematch, analytics snapshot/compaction, backup, Vunnel build |
@@ -66,7 +66,16 @@ scripts/kind-dev.sh up                      # local Kubernetes with Gjallar inst
 gjallar scan registry.example.com/app:1.4 --fail-on urgent    # exit 3 on urgent findings
 ```
 
-**On Kubernetes:**
+**On Kubernetes, nothing to build or clone** (signed images and chart from GHCR):
+```bash
+helm install gjallar oci://ghcr.io/heimdallr-dev/charts/gjallar --version 0.3.1 \
+  -n gjallar --create-namespace --set cluster.name=my-cluster
+kubectl -n gjallar port-forward svc/gjallar-web 8083   # then open http://localhost:8083
+```
+No default StorageClass? Add `--set nats.storageClass=<sc> --set postgresql.storageClass=<sc>`.
+Sign-in is off until you set `auth.issuer` (any OIDC provider); see the chart README.
+
+**Your own images** (air-gapped or a private registry):
 ```bash
 make push   REGISTRY=harbor.local/gjallar
 make deploy REGISTRY=harbor.local/gjallar HELM_ARGS="-f my-values.yaml"
@@ -79,7 +88,7 @@ The full walkthrough, from a fresh WSL install to a running cluster deployment, 
 
 | Repo | What |
 |---|---|
-| [gjallar](https://github.com/heimdallr-dev/gjallar) | Core: every service, CLI, web UI, Dockerfile, tests (this repo) |
+| [gjallar](https://github.com/heimdallr-dev/gjallar) | Core: every service, CLI, Dockerfile, tests (this repo) |
 | [gjallar-helm](https://github.com/heimdallr-dev/gjallar-helm) | Helm chart, Kyverno policies, Keycloak realm |
 | [gjallar-docs](https://github.com/heimdallr-dev/gjallar-docs) | Documentation site |
 | [gjallar-grafana](https://github.com/heimdallr-dev/gjallar-grafana) | Dashboards and alert rules |
@@ -89,9 +98,9 @@ The full walkthrough, from a fresh WSL install to a running cluster deployment, 
 | [gjallar-opa](https://github.com/heimdallr-dev/gjallar-opa) | Gjallar policies as plain Rego for OPA, Conftest, Gatekeeper; CI gate |
 | [gjallar-e2e](https://github.com/heimdallr-dev/gjallar-e2e) | Cluster-level end-to-end suites (kind, Playwright) |
 | [gjallar-skills](https://github.com/heimdallr-dev/gjallar-skills) | Agent skills: the Gjallar Philosophy, triage, contributing (Claude Code plugin) |
-| [gjallar-web](https://github.com/heimdallr-dev/gjallar-web) | Future standalone UI (today the UI ships inside this repo) |
+| [gjallar-web](https://github.com/heimdallr-dev/gjallar-web) | Web UI and its server (image `gjallar-web`) |
 
-For local work, clone `gjallar` and `gjallar-helm` side by side.
+For local work, clone `gjallar` and `gjallar-helm` side by side; without `gjallar-helm`, `make deploy` uses the published chart.
 
 ## Documentation
 

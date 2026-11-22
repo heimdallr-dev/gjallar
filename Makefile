@@ -6,7 +6,7 @@
 #   make deploy REGISTRY=harbor.local/gjallar HELM_ARGS="-f my-values.yaml"
 #   make images BUILDER=nerdctl  containerd + BuildKit instead of Docker (WSL without Docker Desktop)
 SHELL      := /bin/bash
-VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 0.2.0)
+VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 0.3.0)
 REGISTRY   ?= ghcr.io/heimdallr-dev
 NAMESPACE  ?= gjallar
 PLATFORMS  ?= linux/amd64

@@ -55,7 +55,7 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	bus, err := natsbus.Connect(ctx, httpx.Env("GJALLAR_NATS_URL", "nats://localhost:4222"), "gjallar-agent-"+cluster, log)
+	bus, err := natsbus.ConnectClient(ctx, httpx.Env("GJALLAR_NATS_URL", "nats://localhost:4222"), "gjallar-agent-"+cluster, log)
 	if err != nil {
 		return err
 	}

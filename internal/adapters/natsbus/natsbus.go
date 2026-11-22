@@ -44,9 +44,25 @@ type Bus struct {
 // for up to five minutes (a cold cluster spends ~2 min pulling the NATS image
 // and provisioning its volume), so pods that start first don't crash-loop.
 func Connect(ctx context.Context, url, name string, log *slog.Logger, opts ...nats.Option) (*Bus, error) {
+	return dialRetry(ctx, url, name, log, true, opts...)
+}
+
+// ConnectClient dials like Connect but only binds streams and buckets the hub
+// created. Agents use it: their NATS user may publish inventory and runtime
+// data but not create, change or delete streams (see the chart's nats.conf).
+func ConnectClient(ctx context.Context, url, name string, log *slog.Logger, opts ...nats.Option) (*Bus, error) {
+	// A private inbox prefix, so the agent's NATS user can be limited to
+	// replies meant for it (subscribe "_INBOX_agent.>"), not everyone's.
+	return dialRetry(ctx, url, name, log, false, append([]nats.Option{nats.CustomInboxPrefix(AgentInbox)}, opts...)...)
+}
+
+// AgentInbox is the reply-subject prefix agents use (see ConnectClient).
+const AgentInbox = "_INBOX_agent"
+
+func dialRetry(ctx context.Context, url, name string, log *slog.Logger, manage bool, opts ...nats.Option) (*Bus, error) {
 	deadline := time.Now().Add(5 * time.Minute)
 	for {
-		b, err := connect(ctx, url, name, log, opts...)
+		b, err := connect(ctx, url, name, log, manage, opts...)
 		if err == nil || time.Now().After(deadline) {
 			return b, err
 		}
@@ -59,11 +75,8 @@ func Connect(ctx context.Context, url, name string, log *slog.Logger, opts ...na
 	}
 }
 
-func connect(ctx context.Context, url, name string, log *slog.Logger, opts ...nats.Option) (*Bus, error) {
-	opts = append([]nats.Option{nats.Name(name), nats.MaxReconnects(-1), nats.ReconnectWait(2 * time.Second)}, opts...)
-	if tok := os.Getenv("GJALLAR_NATS_TOKEN"); tok != "" {
-		opts = append(opts, nats.Token(tok))
-	}
+func connect(ctx context.Context, url, name string, log *slog.Logger, manage bool, opts ...nats.Option) (*Bus, error) {
+	opts = append(append([]nats.Option{nats.Name(name), nats.MaxReconnects(-1), nats.ReconnectWait(2 * time.Second)}, envAuth()...), opts...)
 	nc, err := nats.Connect(url, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("nats connect %s: %w", url, err)
@@ -74,6 +87,13 @@ func connect(ctx context.Context, url, name string, log *slog.Logger, opts ...na
 		return nil, err
 	}
 	b := &Bus{NC: nc, JS: js, Log: log}
+	if !manage {
+		if b.obj, err = js.ObjectStore(ctx, BucketSBOMs); err != nil {
+			nc.Close()
+			return nil, fmt.Errorf("object store %s (the hub creates it; is gjallar-api running?): %w", BucketSBOMs, err)
+		}
+		return b, nil
+	}
 	if err := b.ensure(ctx); err != nil {
 		nc.Close()
 		return nil, err
@@ -117,6 +137,33 @@ func (b *Bus) ensure(ctx context.Context) error {
 	}
 	b.obj = obj
 	return nil
+}
+
+// envAuth reads NATS credentials from the environment:
+//
+//	GJALLAR_NATS_USER + GJALLAR_NATS_PASSWORD  user/password (chart default: one user per role)
+//	GJALLAR_NATS_TOKEN                         a token, or the password when only a user is set
+//	GJALLAR_NATS_CA                            CA file for tls:// servers
+//	GJALLAR_NATS_CERT + GJALLAR_NATS_KEY       client certificate (mutual TLS)
+func envAuth() []nats.Option {
+	var o []nats.Option
+	user, pass := os.Getenv("GJALLAR_NATS_USER"), os.Getenv("GJALLAR_NATS_PASSWORD")
+	if pass == "" {
+		pass = os.Getenv("GJALLAR_NATS_TOKEN")
+	}
+	switch {
+	case user != "":
+		o = append(o, nats.UserInfo(user, pass))
+	case pass != "":
+		o = append(o, nats.Token(pass))
+	}
+	if ca := os.Getenv("GJALLAR_NATS_CA"); ca != "" {
+		o = append(o, nats.RootCAs(ca))
+	}
+	if c, k := os.Getenv("GJALLAR_NATS_CERT"), os.Getenv("GJALLAR_NATS_KEY"); c != "" && k != "" {
+		o = append(o, nats.ClientCert(c, k))
+	}
+	return o
 }
 
 // Close drains the connection.

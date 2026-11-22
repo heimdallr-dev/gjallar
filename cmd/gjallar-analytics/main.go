@@ -170,7 +170,7 @@ func serve(ctx context.Context, log *slog.Logger, store *analytics.Store) error 
 					"namespaces": ns, "vuln_id": f.VulnID, "package": f.Package, "version": f.Version, "pkg_type": f.PkgType,
 					"severity": f.Severity.String(), "cvss": f.CVSS, "epss": f.EPSS, "kev": f.KEV, "fixed_in": f.FixedIn,
 					"risk": f.Risk.Value, "band": string(f.Risk.Band), "state": string(f.State),
-					"first_seen": ts(&first), "fixed_at": ts(f.FixedAt), "db_version": ev.DBVersion}))
+					"first_seen": ts(&first), "fixed_at": ts(f.FixedAt), "db_version": ev.DBVersion, "source": f.Source}))
 			}
 			return nil
 		}),

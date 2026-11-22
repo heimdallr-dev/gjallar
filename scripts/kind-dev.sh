@@ -13,7 +13,7 @@ cd "$(dirname "$0")/.."
 CHART=${HELM_REPO:-../gjallar-helm}/charts/gjallar   # github.com/heimdallr-dev/gjallar-helm
 NAME=${KIND_CLUSTER:-gjallar}
 REGISTRY=${REGISTRY:-ghcr.io/heimdallr-dev}
-VERSION=${VERSION:-0.2.0}
+VERSION=${VERSION:-0.3.0}
 export KIND_EXPERIMENTAL_PROVIDER=nerdctl
 
 # kind calls `nerdctl` directly; rootful containerd needs sudo (NOPASSWD rule, see gjallar-docs install-wsl.md).
@@ -30,7 +30,10 @@ load() {
   [ -n "$imgs" ] || { echo "no $REGISTRY/gjallar-*:$VERSION images; run: make images BUILDER=nerdctl"; exit 1; }
   # shellcheck disable=SC2086
   $N save -o "$tar" $imgs
-  kind load image-archive "$tar" --name "$NAME"
+  # Not `kind load`: it imports --all-platforms and fails on multi-arch images
+  # pulled from GHCR, where only this host's platform is stored locally.
+  $N exec -i "$NAME-control-plane" ctr --namespace=k8s.io images import \
+    --platform "linux/$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')" --digests --snapshotter=overlayfs - < "$tar" >/dev/null
 }
 
 case ${1:-up} in

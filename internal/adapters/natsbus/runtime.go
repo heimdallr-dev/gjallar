@@ -23,7 +23,10 @@ type RuntimeKV struct{ kv jetstream.KeyValue }
 
 // Runtime opens (or creates) the runtime bucket.
 func (b *Bus) Runtime(ctx context.Context) (*RuntimeKV, error) {
-	kv, err := b.JS.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{Bucket: BucketRuntime, Description: "Packages observed at runtime per image digest", History: 1})
+	kv, err := b.JS.KeyValue(ctx, BucketRuntime) // bind first: agents may not create buckets
+	if errors.Is(err, jetstream.ErrBucketNotFound) {
+		kv, err = b.JS.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{Bucket: BucketRuntime, Description: "Packages observed at runtime per image digest", History: 1})
+	}
 	if err != nil {
 		return nil, err
 	}

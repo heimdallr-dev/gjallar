@@ -82,6 +82,7 @@ var Tables = []Table{
 		{"pkg_type", "VARCHAR"}, {"severity", "VARCHAR"}, {"cvss", "DOUBLE"}, {"epss", "DOUBLE"}, {"kev", "BOOLEAN"},
 		{"fixed_in", "VARCHAR"}, {"risk", "INTEGER"}, {"band", "VARCHAR"}, {"state", "VARCHAR"},
 		{"first_seen", "TIMESTAMPTZ"}, {"fixed_at", "TIMESTAMPTZ"}, {"db_version", "VARCHAR"},
+		{"source", "VARCHAR"}, // which matcher reported it (grype, osv, trivy)
 	}},
 	{"package_licenses", [][2]string{
 		{"ts", "TIMESTAMPTZ"}, {"day", "DATE"}, {"digest", "VARCHAR"}, {"package", "VARCHAR"}, {"version", "VARCHAR"},
@@ -211,6 +212,9 @@ func (s *Store) Init(ctx context.Context) error {
 			cols[i] = c[0] + " " + c[1]
 		}
 		fmt.Fprintf(&b, "CREATE TABLE IF NOT EXISTS %s (%s);\n", t.Name, strings.Join(cols, ", "))
+		for _, c := range t.Columns { // lakes created by an older version gain new columns
+			fmt.Fprintf(&b, "ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s;\n", t.Name, c[0], c[1])
+		}
 	}
 	_, err := s.run(ctx, s.setup(false), b.String(), false)
 	return err
@@ -272,6 +276,7 @@ func (s *Store) Maintain(ctx context.Context, retainSnapshots time.Duration) err
 	if s.cfg.Mode == "ducklake" {
 		sql = fmt.Sprintf(`DELETE FROM finding_daily WHERE day = current_date;
 INSERT INTO finding_daily %s;
+CALL ducklake_flush_inlined_data('lake'); -- small batches sit in the catalog until flushed; history belongs in open Parquet
 CALL ducklake_merge_adjacent_files('lake');
 CALL ducklake_expire_snapshots('lake', older_than => now() - INTERVAL '%d hours');
 CALL ducklake_cleanup_old_files('lake', cleanup_all => true);`, snapshot, int(retainSnapshots.Hours()))
